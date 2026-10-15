@@ -1,0 +1,153 @@
+#!/bin/bash
+# =============================================================================
+#  OBSERVER node bootstrap
+#    - Docker
+#    - Prometheus  (scrapes everything, 2s interval)
+#    - blackbox_exporter (external HTTP probe of the victim site)
+#    - Grafana     (provisioned datasource + the "Slowloris / DDoS Lab" board)
+#
+#  All three run as containers on a private docker network called `lab`, so the
+#  only ports exposed to the operator are 9090 and 3000.
+#
+#  Log: /var/log/lab-init.log
+# =============================================================================
+set -euo pipefail
+
+exec > >(tee /var/log/lab-init.log | logger -t lab-init -s 2>/dev/console) 2>&1
+
+ASSET_BUCKET="${asset_bucket}"
+ASSET_PREFIX="${asset_prefix}"
+REGION="${region}"
+LAB_NAME="${lab_name}"
+BLACKBOX_IMAGE="${blackbox_image}"
+PROMETHEUS_IMAGE="${prometheus_image}"
+GRAFANA_IMAGE="${grafana_image}"
+GRAFANA_ADMIN_PASSWORD="${grafana_admin_password}"
+PROMETHEUS_RETENTION="${prometheus_retention}"
+
+log() { echo "[lab-init] $*"; }
+
+fetch_asset() {
+  local key="$1" dest="$2" attempt
+  mkdir -p "$(dirname "$dest")"
+  for attempt in 1 2 3 4 5; do
+    if aws s3 cp "s3://$ASSET_BUCKET/$ASSET_PREFIX/$key" "$dest" \
+         --region "$REGION" --only-show-errors; then
+      return 0
+    fi
+    log "retry $attempt fetching $key"
+    sleep $((attempt * 3))
+  done
+  log "FATAL: could not fetch s3://$ASSET_BUCKET/$ASSET_PREFIX/$key"
+  return 1
+}
+
+# AL2023 ships AWS CLI v2, but do not bet the whole demo on it.
+ensure_aws_cli() {
+  if command -v aws >/dev/null 2>&1; then
+    return 0
+  fi
+  log "AWS CLI missing -- installing"
+  dnf -y install awscli-2 || dnf -y install awscli || \
+    die_loud "could not install the AWS CLI"
+}
+
+die_loud() { log "FATAL: $*"; exit 1; }
+
+# -----------------------------------------------------------------------------
+#  Swap: Prometheus + Grafana + blackbox on 1 GiB of RAM is fine, but not with
+#  zero headroom.
+# -----------------------------------------------------------------------------
+log "configuring swap"
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+log "installing docker"
+dnf -y install docker jq
+systemctl enable --now docker
+
+# -----------------------------------------------------------------------------
+#  Configuration
+# -----------------------------------------------------------------------------
+log "fetching monitoring configuration"
+mkdir -p /opt/lab/monitoring
+fetch_asset "monitoring/prometheus.yml" /opt/lab/monitoring/prometheus.yml
+fetch_asset "monitoring/blackbox.yml"   /opt/lab/monitoring/blackbox.yml
+
+mkdir -p /opt/lab/grafana/provisioning/datasources /opt/lab/grafana/provisioning/dashboards /opt/lab/grafana/dashboards
+fetch_asset "monitoring/grafana/provisioning/datasources/prometheus.yml" \
+  /opt/lab/grafana/provisioning/datasources/prometheus.yml
+fetch_asset "monitoring/grafana/provisioning/dashboards/dashboards.yml" \
+  /opt/lab/grafana/provisioning/dashboards/dashboards.yml
+fetch_asset "monitoring/grafana/dashboards/slowloris-demo.json" \
+  /opt/lab/grafana/dashboards/slowloris-demo.json
+
+# -----------------------------------------------------------------------------
+#  Persistent volumes. The container images run as non-root, so the host
+#  directories have to be owned by the right uids or Grafana/Prometheus die on
+#  first boot:
+#     prometheus -> nobody/nogroup (65534)
+#     grafana    -> grafana (472)
+# -----------------------------------------------------------------------------
+mkdir -p /opt/lab/prometheus-data /opt/lab/grafana-data
+chown -R 65534:65534 /opt/lab/prometheus-data
+chown -R 472:472     /opt/lab/grafana-data
+
+# -----------------------------------------------------------------------------
+#  Containers
+# -----------------------------------------------------------------------------
+docker network inspect lab >/dev/null 2>&1 || docker network create lab
+docker rm -f blackbox prometheus grafana >/dev/null 2>&1 || true
+
+log "starting blackbox_exporter"
+docker run -d --name blackbox \
+  --restart unless-stopped \
+  --network lab \
+  --log-driver json-file --log-opt max-size=10m --log-opt max-file=2 \
+  -v /opt/lab/monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml:ro \
+  "$BLACKBOX_IMAGE"
+
+log "starting prometheus"
+docker run -d --name prometheus \
+  --restart unless-stopped \
+  --network lab \
+  --log-driver json-file --log-opt max-size=10m --log-opt max-file=2 \
+  -p 9090:9090 \
+  -v /opt/lab/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+  -v /opt/lab/prometheus-data:/prometheus \
+  "$PROMETHEUS_IMAGE" \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/prometheus \
+  --storage.tsdb.retention.time="$PROMETHEUS_RETENTION"
+
+log "starting grafana"
+docker run -d --name grafana \
+  --restart unless-stopped \
+  --network lab \
+  --log-driver json-file --log-opt max-size=10m --log-opt max-file=2 \
+  -p 3000:3000 \
+  -e GF_SECURITY_ADMIN_USER=admin \
+  -e GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD" \
+  -e GF_USERS_ALLOW_SIGN_UP=false \
+  -e GF_AUTH_ANONYMOUS_ENABLED=false \
+  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/slowloris-demo.json \
+  -v /opt/lab/grafana/provisioning:/etc/grafana/provisioning:ro \
+  -v /opt/lab/grafana/dashboards:/var/lib/grafana/dashboards:ro \
+  -v /opt/lab/grafana-data:/var/lib/grafana \
+  "$GRAFANA_IMAGE"
+
+log "waiting for Grafana to answer on :3000"
+for attempt in $(seq 1 60); do
+  if curl -fsS -o /dev/null "http://127.0.0.1:3000/api/health"; then
+    log "grafana is up"
+    break
+  fi
+  sleep 5
+done
+
+log "observer bootstrap complete"

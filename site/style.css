@@ -1,0 +1,194 @@
+/* ==========================================================================
+   Acme Corp demo site -- styling only. Nothing here is part of the attack.
+   ========================================================================== */
+
+:root {
+  --bg:        #0d1117;
+  --panel:     #161b22;
+  --panel-2:   #1c2129;
+  --border:    #2d333b;
+  --text:      #e6edf3;
+  --muted:     #8b949e;
+  --accent:    #58a6ff;
+  --ok:        #3fb950;
+  --warn:      #d29922;
+  --bad:       #f85149;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* --- top bar ------------------------------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.5rem;
+  background: linear-gradient(180deg, #161b22, #0d1117);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand { display: flex; align-items: baseline; gap: 0.75rem; }
+
+.logo {
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  font-size: 1.05rem;
+  color: var(--accent);
+}
+
+.host { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; }
+
+.badge {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badge-idle { color: var(--muted);  border-color: var(--border); }
+.badge-ok   { color: var(--ok);     border-color: rgba(63,185,80,.45);  background: rgba(63,185,80,.10); }
+.badge-warn { color: var(--warn);   border-color: rgba(210,153,34,.45); background: rgba(210,153,34,.10); }
+.badge-bad  { color: var(--bad);    border-color: rgba(248,81,73,.45);  background: rgba(248,81,73,.10); }
+
+/* --- layout ------------------------------------------------------------- */
+
+main { max-width: 1080px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+
+.hero { margin-bottom: 2rem; }
+
+.hero h1 {
+  margin: 0 0 0.4rem;
+  font-size: 2.1rem;
+  letter-spacing: -0.02em;
+}
+
+.hero .sub { margin: 0; color: var(--muted); max-width: 62ch; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+
+.hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
+.hint.small { font-size: 0.78rem; margin: 0.85rem 0 0; }
+
+/* --- metrics ------------------------------------------------------------ */
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.metric {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.metric .k {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric .v {
+  font-family: var(--mono);
+  font-size: 1.02rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* --- chart -------------------------------------------------------------- */
+
+#chart {
+  display: block;
+  width: 100%;
+  height: 170px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* --- products ----------------------------------------------------------- */
+
+.products { list-style: none; margin: 0; padding: 0; }
+
+.products li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.92rem;
+}
+
+.products li:last-child { border-bottom: none; }
+
+.price { font-family: var(--mono); color: var(--accent); }
+
+/* --- footer ------------------------------------------------------------- */
+
+.footbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 2.5rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+
+.footbar .warn { color: var(--warn); }
+
+@media (max-width: 640px) {
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .hero h1 { font-size: 1.6rem; }
+}

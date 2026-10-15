@@ -1,0 +1,92 @@
+# =============================================================================
+#  Prometheus configuration for the DDoS lab observer
+#  Rendered by OpenTofu -> s3://<bucket>/<lab>/monitoring/prometheus.yml
+#
+#  Targets are discovered with EC2 service discovery (tagged by lab_name)
+#  rather than hard-coded IPs. That matters because the observer boots before
+#  any other node exists, and because instances get new IPs if you stop/start
+#  them mid-class.
+# =============================================================================
+
+global:
+  # 2s gives a live-looking graph without meaningful load on a t3.micro.
+  scrape_interval: 2s
+  evaluation_interval: 5s
+  external_labels:
+    lab: ${lab_name}
+
+scrape_configs:
+  # --- Prometheus scraping itself ------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # --- node_exporter on the victim and every attacker ----------------------
+  # Scoped by tag so the observer (which does not run node_exporter) does not
+  # show up as a permanently-failing target.
+  - job_name: node
+    ec2_sd_configs:
+      - region: ${region}
+        port: 9100
+        filters:
+          - name: tag:LabName
+            values: ["${lab_name}"]
+          - name: tag:Role
+            values: ["victim", "attacker"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Role]
+        target_label: role
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: node_name
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: private_ip
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+
+  # --- apache_exporter on the victim only ----------------------------------
+  # This is what yields apache_workers / apache_scoreboard, i.e. the live
+  # "how many connections is Apache juggling right now" numbers.
+  - job_name: apache
+    ec2_sd_configs:
+      - region: ${region}
+        port: 9117
+        filters:
+          - name: tag:LabName
+            values: ["${lab_name}"]
+          - name: tag:Role
+            values: ["victim"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Role]
+        target_label: role
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: private_ip
+
+  # --- blackbox_exporter probing the victim site over HTTP -----------------
+  # Gives probe_success / probe_duration_seconds, i.e. "is the website up and
+  # how slow is it", measured from outside the victim entirely.
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [http_victim]
+    ec2_sd_configs:
+      - region: ${region}
+        port: 80
+        filters:
+          - name: tag:LabName
+            values: ["${lab_name}"]
+          - name: tag:Role
+            values: ["victim"]
+    relabel_configs:
+      # Build the probe URL from the discovered private IP.
+      - source_labels: [__meta_ec2_private_ip]
+        regex: (.+)
+        replacement: http://$${1}:80/
+        target_label: __param_target
+      # Keep the URL as the human-readable `instance` label.
+      - source_labels: [__param_target]
+        target_label: instance
+      - source_labels: [__meta_ec2_tag_Role]
+        target_label: role
+      # Actually send the scrape to blackbox_exporter, not to the victim.
+      - target_label: __address__
+        replacement: blackbox:9115

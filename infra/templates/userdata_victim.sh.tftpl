@@ -1,0 +1,147 @@
+#!/bin/bash
+# =============================================================================
+#  VICTIM node bootstrap
+#    - Apache httpd, configured to be vulnerable to Slowloris
+#    - the demo website (pulled from S3)
+#    - node_exporter + apache_exporter so Grafana can see the damage
+#
+#  Log: /var/log/lab-init.log   (also in the systemd journal as "lab-init")
+# =============================================================================
+set -euo pipefail
+
+exec > >(tee /var/log/lab-init.log | logger -t lab-init -s 2>/dev/console) 2>&1
+
+ASSET_BUCKET="${asset_bucket}"
+ASSET_PREFIX="${asset_prefix}"
+REGION="${region}"
+LAB_NAME="${lab_name}"
+NODE_EXPORTER_VERSION="${node_exporter_version}"
+APACHE_EXPORTER_VERSION="${apache_exporter_version}"
+
+log() { echo "[lab-init] $*"; }
+
+fetch_asset() {
+  local key="$1" dest="$2" attempt
+  mkdir -p "$(dirname "$dest")"
+  for attempt in 1 2 3 4 5; do
+    if aws s3 cp "s3://$ASSET_BUCKET/$ASSET_PREFIX/$key" "$dest" \
+         --region "$REGION" --only-show-errors; then
+      return 0
+    fi
+    log "retry $attempt fetching $key"
+    sleep $((attempt * 3))
+  done
+  log "FATAL: could not fetch s3://$ASSET_BUCKET/$ASSET_PREFIX/$key"
+  return 1
+}
+
+install_exporter() {
+  # install_exporter <owner/repo> <binary-name> <version>
+  local slug="$1" name="$2" version="$3" attempt
+  local tarball="$name-$version.linux-amd64.tar.gz"
+
+  if [ "$${slug#*/}" = "$slug" ]; then
+    log "FATAL: install_exporter needs an owner/repo slug, got '$slug'"
+    return 1
+  fi
+
+  local url="https://github.com/$slug/releases/download/v$version/$tarball"
+  for attempt in 1 2 3 4 5; do
+    if curl -fsSL --connect-timeout 10 --retry 3 -o "/tmp/$tarball" "$url"; then
+      tar -xzf "/tmp/$tarball" -C /tmp
+      install -m 0755 "/tmp/$name-$version.linux-amd64/$name" "/usr/local/bin/$name"
+      return 0
+    fi
+    log "retry $attempt downloading $url"
+    sleep $((attempt * 3))
+  done
+  log "FATAL: could not download $url"
+  return 1
+}
+
+ensure_user() {
+  getent passwd "$1" >/dev/null 2>&1 || \
+    useradd --system --no-create-home --shell /usr/sbin/nologin "$1"
+}
+
+# AL2023 ships AWS CLI v2, but do not bet the whole demo on it.
+ensure_aws_cli() {
+  if command -v aws >/dev/null 2>&1; then
+    return 0
+  fi
+  log "AWS CLI missing -- installing"
+  dnf -y install awscli-2 || dnf -y install awscli || \
+    die_loud "could not install the AWS CLI"
+}
+
+die_loud() { log "FATAL: $*"; exit 1; }
+
+# -----------------------------------------------------------------------------
+#  2 GiB of swap: 40 prefork workers plus an OS on 1 GiB of RAM is tight, and
+#  an OOM kill mid-demo would be confusing.
+# -----------------------------------------------------------------------------
+log "configuring swap"
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# -----------------------------------------------------------------------------
+#  Packages (curl and tar ship with AL2023; installing "curl" would conflict
+#  with curl-minimal)
+# -----------------------------------------------------------------------------
+log "installing httpd"
+dnf -y install httpd jq
+
+# -----------------------------------------------------------------------------
+#  The vulnerable Apache config + the demo site
+# -----------------------------------------------------------------------------
+# Pin the MPM to prefork. One process per connection is precisely the model
+# Slowloris punishes, and pinning it keeps the demo deterministic even if a
+# future AMI switches the distro default to the event MPM.
+log "pinning Apache to the prefork MPM"
+cat > /etc/httpd/conf.modules.d/00-mpm.conf <<'MPMEOF'
+# Pinned by the lab bootstrap: one process per connection is the model that
+# Slowloris starves. Do not switch this to event/worker and expect the demo
+# to behave the same way.
+LoadModule mpm_prefork_module modules/mod_mpm_prefork.so
+MPMEOF
+
+log "installing vulnerable Apache configuration"
+fetch_asset "config/victim-apache.conf" /etc/httpd/conf.d/zz-slowloris-lab.conf
+rm -f /etc/httpd/conf.d/welcome.conf
+
+log "validating Apache configuration"
+httpd -t || die_loud "Apache rejected the generated configuration -- see above"
+
+log "installing demo site"
+fetch_asset "site/index.html" /var/www/html/index.html
+fetch_asset "site/style.css"  /var/www/html/style.css
+fetch_asset "site/app.js"     /var/www/html/app.js
+chmod 0644 /var/www/html/index.html /var/www/html/style.css /var/www/html/app.js
+
+# -----------------------------------------------------------------------------
+#  Exporters
+# -----------------------------------------------------------------------------
+log "installing exporters"
+install_exporter prometheus/node_exporter   node_exporter   "$NODE_EXPORTER_VERSION"
+install_exporter Lusitaniae/apache_exporter apache_exporter "$APACHE_EXPORTER_VERSION"
+ensure_user node_exporter
+ensure_user apache_exporter
+
+fetch_asset "systemd/node_exporter.service"   /etc/systemd/system/node_exporter.service
+fetch_asset "systemd/apache_exporter.service" /etc/systemd/system/apache_exporter.service
+
+# -----------------------------------------------------------------------------
+#  Start everything
+# -----------------------------------------------------------------------------
+log "starting services"
+systemctl daemon-reload
+systemctl enable --now httpd
+systemctl enable --now node_exporter
+systemctl enable --now apache_exporter
+
+log "victim bootstrap complete -- apache is intentionally vulnerable to Slowloris"

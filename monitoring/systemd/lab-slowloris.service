@@ -1,0 +1,27 @@
+[Unit]
+Description=Slowloris demo attack client (training lab only)
+Documentation=file:/opt/lab/attack/slowloris.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# TARGET / PORT / SOCKETS / INTERVAL / TIMEOUT come from here.
+EnvironmentFile=/etc/lab/attack.env
+Type=simple
+ExecStart=/usr/bin/python3 /opt/lab/attack/slowloris.py --target ${TARGET} --port ${PORT} --sockets ${SOCKETS} --interval ${INTERVAL} --timeout ${TIMEOUT} --i-have-permission
+
+# The script installs its own SIGINT/SIGTERM handler and closes every socket,
+# which is what makes the "stop the attack" half of the demo clean.
+KillSignal=SIGINT
+TimeoutStopSec=20s
+
+Restart=no
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=slowloris
+
+# Comfortably below the file-descriptor ceiling on AL2023.
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acme Corp &mdash; Demo Site</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">ACME</span>
+    <span class="host">demo.acme.test</span>
+  </div>
+  <div id="badge" class="badge badge-idle">probing&hellip;</div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>Acme Corp</h1>
+    <p class="sub">
+      A perfectly ordinary website. It serves three static files and holds no
+      database connections. There is no reason it should ever be slow.
+    </p>
+  </section>
+
+  <section class="grid">
+
+    <article class="card">
+      <h2>Client-side health probe</h2>
+      <p class="hint">
+        This page re-requests itself every 2&nbsp;seconds and times how long the
+        server takes to answer. Watch what happens when the workers run out.
+      </p>
+
+      <div class="metrics">
+        <div class="metric">
+          <span class="k">Availability</span>
+          <span class="v" id="m-avail">&ndash;</span>
+        </div>
+        <div class="metric">
+          <span class="k">Last response</span>
+          <span class="v" id="m-last">&ndash;</span>
+        </div>
+        <div class="metric">
+          <span class="k">p95</span>
+          <span class="v" id="m-p95">&ndash;</span>
+        </div>
+        <div class="metric">
+          <span class="k">Timeouts</span>
+          <span class="v" id="m-timeouts">0</span>
+        </div>
+      </div>
+
+      <canvas id="chart" height="170"></canvas>
+      <p class="hint small">
+        Green = normal response &middot; amber = slow (&gt;1s) &middot; red = timeout after 8s
+      </p>
+    </article>
+
+    <article class="card">
+      <h2>This week's offers</h2>
+      <ul class="products">
+        <li><span class="pname">Anvil, standard</span><span class="price">&pound;9.99</span></li>
+        <li><span class="pname">Rocket, acme</span><span class="price">&pound;149.00</span></li>
+        <li><span class="pname">Giant rubber band</span><span class="price">&pound;2.50</span></li>
+        <li><span class="pname">Portable hole</span><span class="price">&pound;74.99</span></li>
+        <li><span class="pname">Birdseed, 20kg</span><span class="price">&pound;11.20</span></li>
+      </ul>
+      <p class="hint small">
+        Static HTML. If this list takes ten seconds to appear, the server is
+        out of worker slots &mdash; not out of bandwidth.
+      </p>
+    </article>
+
+  </section>
+</main>
+
+<footer class="footbar">
+  <span id="server-line">Served by Apache httpd on Amazon Linux 2023</span>
+  <span class="warn">Training lab &mdash; deliberately vulnerable to Slowloris</span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

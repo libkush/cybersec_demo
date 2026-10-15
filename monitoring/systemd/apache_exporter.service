@@ -1,0 +1,25 @@
+[Unit]
+Description=Prometheus Apache Exporter (mod_status)
+Documentation=https://github.com/Lusitaniae/apache_exporter
+After=network-online.target httpd.service
+Wants=network-online.target
+Requires=httpd.service
+
+[Service]
+Type=simple
+User=apache_exporter
+Group=apache_exporter
+ExecStart=/usr/local/bin/apache_exporter --web.listen-address=:9117 --scrape_uri=http://127.0.0.1/server-status?auto
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=apache_exporter
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

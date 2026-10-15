@@ -1,0 +1,26 @@
+# =============================================================================
+#  blackbox_exporter modules
+#  Consumed by the observer's blackbox_exporter container.
+#
+#  Prometheus asks blackbox to fetch the victim's homepage every 2 seconds and
+#  reports probe_success (1/0) and probe_duration_seconds. That is the
+#  independent, out-of-band answer to "is the website actually up?" -- it does
+#  not trust the victim's own exporter to tell us.
+#
+#  NOTE: blackbox_exporter unmarshals this file strictly -- an unknown key is a
+#  fatal startup error, not a warning. Validate any edit with:
+#      docker run --rm -v "$PWD/blackbox.yml:/etc/blackbox_exporter/config.yml:ro" \
+#          prom/blackbox-exporter:v0.29.0 --config.check
+# =============================================================================
+
+modules:
+  http_victim:
+    prober: http
+    # Bounds the whole probe, including the header phase, so the probe itself
+    # can never be held open by a half-open connection. This is what makes
+    # probe_success flip to 0 during the attack instead of hanging forever.
+    timeout: 5s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      preferred_ip_protocol: ip4

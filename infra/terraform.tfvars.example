@@ -1,0 +1,32 @@
+###############################################################################
+#  Copy this file to infra/terraform.tfvars and edit as needed.
+#  Everything here is optional -- the defaults already produce a working lab.
+###############################################################################
+
+region      = "us-east-1"
+project_name = "ddos-lab"
+lab_name    = "slowloris"
+
+# Leave empty to auto-detect the public IP that runs `tofu apply`.
+# Lock this down if you want a stable rule, e.g.:
+# admin_cidr = "203.0.113.7/32"
+admin_cidr = ""
+
+# 1 victim + 3 attackers (+ 1 observer) = the classic "not a DoS, a DDoS" story.
+attacker_count  = 3
+deploy_observer = true
+instance_type   = "t3.micro"
+
+# Attack shape. 3 attackers x 150 sockets = 450 half-open requests against an
+# Apache that only has 40 prefork workers.
+attacker_sockets  = 150
+attacker_interval = 10
+
+# Change this if the lab lives longer than an afternoon.
+# grafana_admin_password = "something-better"
+
+# extra tags
+# tags = {
+#   Owner = "your-name"
+#   Class = "CYBR-101"
+# }

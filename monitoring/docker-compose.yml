@@ -1,0 +1,61 @@
+# =============================================================================
+#  Local monitoring stack -- the `deploy_observer = false` alternative.
+#
+#  Use this when you want to stay at exactly 4 EC2 nodes and run Prometheus +
+#  Grafana on your own machine instead of paying for an observer instance.
+#
+#      cd monitoring
+#      cp prometheus.local.yml.example prometheus.local.yml
+#      "${EDITOR:-vi}" prometheus.local.yml     # paste in the IPs from `tofu output`
+#      docker compose up -d
+#
+#  Grafana    : http://localhost:3000   (admin / admin)
+#  Prometheus : http://localhost:9090
+#
+#  The provisioned datasource and the dashboard are the same files the EC2
+#  observer uses, so the board looks identical.
+# =============================================================================
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: lab-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=3d
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.0
+    container_name: lab-blackbox
+    restart: unless-stopped
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    container_name: lab-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data:
+  grafana-data:

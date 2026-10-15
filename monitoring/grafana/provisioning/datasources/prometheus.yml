@@ -1,0 +1,15 @@
+# Grafana datasource provisioning. The uid is pinned to "prometheus" because
+# every panel in the provisioned dashboard refers to it by uid.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 2s
+      httpMethod: POST

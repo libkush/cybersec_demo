@@ -1,0 +1,73 @@
+# =============================================================================
+#  Prometheus config for the LOCAL monitoring stack (docker-compose.yml).
+#
+#  Copy to prometheus.local.yml and replace the three placeholders with the
+#  values from:
+#
+#      cd infra && tofu output -json | jq -r '.victim_public_ip.value, (.attacker_public_ips.value | join(" "))'
+#
+#  This variant uses static targets because your laptop cannot use EC2 service
+#  discovery the way the in-VPC observer does.
+# =============================================================================
+
+global:
+  scrape_interval: 2s
+  evaluation_interval: 5s
+  external_labels:
+    lab: slowloris
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ---------------------------------------------------------------------------
+  #  node_exporter on every node (port 9100)
+  #  REPLACE the addresses below.
+  # ---------------------------------------------------------------------------
+  - job_name: node
+    static_configs:
+      - targets: ["VICTIM_PUBLIC_IP:9100"]
+        labels:
+          role: victim
+          node_name: victim
+      - targets: ["ATTACKER_1_PUBLIC_IP:9100"]
+        labels:
+          role: attacker
+          node_name: attacker-1
+      - targets: ["ATTACKER_2_PUBLIC_IP:9100"]
+        labels:
+          role: attacker
+          node_name: attacker-2
+      - targets: ["ATTACKER_3_PUBLIC_IP:9100"]
+        labels:
+          role: attacker
+          node_name: attacker-3
+
+  # ---------------------------------------------------------------------------
+  #  apache_exporter on the victim (port 9117)
+  # ---------------------------------------------------------------------------
+  - job_name: apache
+    static_configs:
+      - targets: ["VICTIM_PUBLIC_IP:9117"]
+        labels:
+          role: victim
+
+  # ---------------------------------------------------------------------------
+  #  blackbox HTTP probe of the victim site
+  # ---------------------------------------------------------------------------
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [http_victim]
+    static_configs:
+      - targets: ["http://VICTIM_PUBLIC_IP/"]
+        labels:
+          role: victim
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
